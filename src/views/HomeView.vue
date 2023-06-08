@@ -6,11 +6,19 @@ import CenterLayout from '@/layouts/CenterLayout.vue'
 import VDiff from '@/components/VDiff.vue'
 
 // Utilities
-import { nextTick, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import DropdownVue from '@/components/VDropdown.vue'
 
 import { Command } from '@tauri-apps/api/shell'
+import { invoke } from '@tauri-apps/api'
+
+function runCommand(command: string, path: string, args: string[]) {
+    const process = new Command(command, args, {
+        cwd: path
+    })
+    return process.execute()
+}
 
 const types = [
     {
@@ -83,15 +91,39 @@ const newBranch = ref(false)
 const formSubmited = ref(false)
 
 const diff = async () => {
-    const command = new Command('git', ['diff'], {
+    let command = new Command('git', ['diff'], {
         cwd: path
     })
-    const output = (await command.execute()).stdout
-    changes.value = output
+
+    let output = await command.execute()
+
+    if (output.stdout !== '') {
+        changes.value = output.stdout
+        return
+    }
+
+    if (!changes.value) {
+        command = new Command('git', ['diff', '--staged'], {
+            cwd: path
+        })
+        output = await command.execute()
+
+        if (output.stdout !== '') {
+            changes.value = output.stdout
+            return
+        }
+    }
 }
+
+let nInterval: number
 
 onMounted(() => {
     diff()
+    nInterval = setInterval(diff, 1000)
+})
+
+onBeforeUnmount(() => {
+    clearInterval(nInterval)
 })
 
 const submit = () => {
@@ -109,7 +141,6 @@ const liveConsole = ref<
 >([])
 
 const compile = () => {
-    console.log('Compiling')
     const command = new Command('make', undefined, {
         cwd: path + '/src'
     })
@@ -126,7 +157,6 @@ const compile = () => {
 
         if (consoleContainer.value) {
             consoleContainer.value.scrollTop = consoleContainer.value.scrollHeight
-            console.log(consoleContainer.value.scrollHeight)
         }
     })
 
@@ -152,17 +182,13 @@ const compile = () => {
 
     setInterval(() => {
         msg.value = ''
-    }, 10000)
+    }, 5000)
 }
 
 const createNewBranch = () => {
     console.log('Creating new branch')
-    const command = new Command('git', ['checkout', '-b', form.value.branch], {
-        cwd: path
-    })
 
-    command
-        .execute()
+    runCommand('git', path, ['checkout', '-b', form.value.branch])
         .then(() => {
             error.value = false
             msg.value = 'Branch created successfully!'
@@ -178,21 +204,30 @@ const createNewBranch = () => {
 
     setInterval(() => {
         msg.value = ''
-    }, 1500)
+    }, 5000)
 }
 
-const commit = () => {
-    const command = new Command('git', ['add .'], {
-        cwd: path
-    })
+const getCurrentBranchName = async () => {
+    const result = await runCommand('git', path, ['rev-parse', '--abbrev-ref', 'HEAD'])
+    return result.stdout
+}
 
-    command.execute().then(() => {
-        const gitadd = new Command('git', ['commit', '-m', `"${form.value.description}"`])
-        gitadd.execute().then(() => {
-            console.log('Commit successfull')
-            submitForm()
-        })
-    })
+const commit = async () => {
+    await runCommand('git', path, ['add', '.'])
+    const bench = await getBench()
+    await runCommand('git', path, ['commit', '-m', 'Bench: ' + bench, '-m', form.value.description])
+
+    const curent = form.value.branch ? await getCurrentBranchName() : form.value.branch
+
+    await runCommand('git', path, ['push', '--set-upstream', 'origin', curent])
+
+    error.value = false
+    msg.value = 'Push successfull!'
+    setInterval(() => {
+        msg.value = ''
+    }, 5000)
+
+    submitForm(bench)
 }
 
 const getMasterBench = async () => {
@@ -219,30 +254,9 @@ const getMasterBench = async () => {
 }
 
 const getBench = async () => {
-    const command = new Command('stockfish', undefined, {
-        cwd: path + '/src'
-    })
+    const lines: string[] = await invoke('stockfish', { path: path + '/src' })
 
-    command.stdout.on('data', (line: string) => {
-        console.log(line)
-    })
-
-    command.stderr.on('data', (line: string) => {
-        console.log(line)
-    })
-
-    const output = await command.execute()
-
-    console.log(output)
-
-    let nodes = 0
-    output.stdout.split('\n').forEach((line: string) => {
-        if (line.includes('Nodes searched')) {
-            nodes = Number(line.split(' ')[line.length - 1])
-        }
-    })
-
-    return nodes
+    return Number(lines[lines.length - 2].split(' ').slice(-1)[0])
 }
 
 const fishtestForm = {
@@ -273,7 +287,7 @@ const fishtestForm = {
     tests_repo: ''
 }
 
-const submitForm = async () => {
+const submitForm = async (bench: number) => {
     fishtestForm.new_tag = form.value.branch
     fishtestForm.tc = form.value.type.tc
     fishtestForm.threads = form.value.type.threads
@@ -282,10 +296,10 @@ const submitForm = async () => {
     fishtestForm.info = form.value.description
 
     fishtestForm.base_signature = await getMasterBench()
-    fishtestForm.new_signature = await getBench()
+    fishtestForm.new_signature = bench
     fishtestForm.tests_repo = localStorage.getItem('testUrl') || ''
 
-    console.log(fishtestForm)
+    formSubmited.value = false
 }
 
 const msg = ref('')
@@ -358,11 +372,11 @@ const error = ref(false)
 
 <style scoped>
 .fly-in-enter-active {
-    animation: fly-in 0.5s forwards;
+    animation: fly-in 0.2s forwards;
 }
 
 .fly-in-leave-active {
-    animation: fade-out 0.5s forwards;
+    animation: fade-out 0.2s forwards;
 }
 
 @keyframes fly-in {

@@ -35,14 +35,14 @@
                 "args": true
             },
             {
+                "name": "git_add_all",
+                "cmd": "git",
+                "args": true
+            },
+            {
                 "name": "make",
                 "cmd": "make",
                 "args": ["-j", "build", "ARCH=x86-64"]
-            },
-            {
-                "name": "stockfish",
-                "cmd": "stockfish",
-                "args": true
             }
         ]
       }
