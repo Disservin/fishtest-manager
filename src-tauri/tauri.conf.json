@@ -24,6 +24,27 @@
         "message": true, 
         "open": true,
         "save": true 
+      },
+      "shell": {
+        "all": true, 
+        "execute": true,
+        "scope": [
+            {
+                "name": "git",
+                "cmd": "git",
+                "args": true
+            },
+            {
+                "name": "make",
+                "cmd": "make",
+                "args": ["-j", "build", "ARCH=x86-64"]
+            },
+            {
+                "name": "stockfish",
+                "cmd": "stockfish",
+                "args": true
+            }
+        ]
       }
     },
     "bundle": {

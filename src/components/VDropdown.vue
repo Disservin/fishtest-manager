@@ -1,5 +1,5 @@
 <template>
-    <div class="top-16 w-72">
+    <div class="top-16 lg:w-72 md:w-48 w-32">
         <Listbox v-model="selected">
             <div class="relative mt-1">
                 <ListboxButton
